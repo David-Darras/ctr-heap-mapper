@@ -1,20 +1,20 @@
 #include <QApplication>
 #include "MainWindow.h"
 
-int main(int argc, char *argv[])
+int main(int argc, char* argv[])
 {
-  QApplication app(argc, argv);
+    QApplication app(argc, argv);
 
-  // Set up style
-  {
-    app.setStyle("Fusion");
+    // Set up style
+    {
+        app.setStyle("Fusion");
 
-    QFont font("JetBrains Mono", 11);
-    app.setFont(font);
-  }
+        QFont font("JetBrains Mono", 11);
+        app.setFont(font);
+    }
 
-  MainWindow window;
-  window.show();
+    MainWindow window;
+    window.show();
 
-  return app.exec();
+    return app.exec();
 }

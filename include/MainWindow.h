@@ -5,15 +5,21 @@
 #include <QTreeWidget>
 #include <QTextEdit>
 
-class MainWindow : public QMainWindow {
+#include "types.h"
+
+class MainWindow : public QMainWindow
+{
 public:
-  explicit MainWindow(QWidget *parent = nullptr);
+    explicit MainWindow(QWidget* parent = nullptr);
 
 private:
-  void setupUi();
+    static const u32 BYTES_PER_LINE = 16;
 
-  QTextEdit *treeView;
-  QTextEdit *memoryView;
+    void setupUi();
+    void printMemoryBlock(QByteArray data);
+
+    QTextEdit* treeView;
+    QTextEdit* memoryView;
 };
 
 #endif // CTR_HEAP_MAPPER_MAINAPP_H
