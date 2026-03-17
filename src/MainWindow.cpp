@@ -16,15 +16,7 @@ MainWindow::MainWindow(QWidget* parent)
 {
     setWindowTitle("CTR-Heap-Mapper");
     resize(1280, 720);
-
     setupUi();
-
-    QTreeWidgetItem* heap1 = addHeap(0x08000000, 0x10000);
-    addMemoryBlock(heap1, 0x08000000, 0x1000, true);
-    addMemoryBlock(heap1, 0x08001000, 0x500, false);
-
-    QTreeWidgetItem* heap2 = addHeap(0x08200000, 0x20000);
-    addMemoryBlock(heap2, 0x08200000, 0x2000, true);
 }
 
 void MainWindow::setupUi()
@@ -40,11 +32,8 @@ void MainWindow::setupUi()
     connect(openAction, &QAction::triggered, this, &MainWindow::openFile);
 
     treeView = new QTreeWidget();
-    treeView->setColumnCount(3);
-    treeView->setHeaderLabels(QStringList() << "Address" << "Size" << "State");
-    treeView->setColumnWidth(0, 150);
-    treeView->setColumnWidth(1, 120);
-    treeView->setColumnWidth(2, 100);
+    treeView->setColumnCount(1);
+    treeView->setHeaderHidden(true);
 
     memoryView = new QHexView();
     memoryView->setReadOnly(true);
@@ -66,10 +55,7 @@ void MainWindow::openFile()
     QString fileName = QFileDialog::getOpenFileName(this, "Open Binary File", "",
                                                     "All Files (*);;Binary Files (*.bin *.dat)");
 
-    if (fileName.isEmpty())
-    {
-        return;
-    }
+    if (fileName.isEmpty()) return;
 
     QFile file(fileName);
     if (!file.open(QIODevice::ReadOnly))
@@ -92,6 +78,7 @@ void MainWindow::openFile()
             QByteArray block = file.read(regions[i].size);
             memoryView->setData(block);
             memoryView->setBaseAddress(startAddress);
+            parseHeapData(block, startAddress);
             return;
         }
     }
@@ -99,26 +86,78 @@ void MainWindow::openFile()
     QMessageBox::critical(this, "Error", "Heap not found.");
 }
 
-QTreeWidgetItem* MainWindow::addHeap(u32 address, u32 size)
+void MainWindow::parseHeapData(const QByteArray& data, u32 baseAddr)
 {
+    treeView->clear();
+    if ((u32)data.size() < sizeof(ExpHeap)) return;
+
+    const ExpHeap* heap = reinterpret_cast<const ExpHeap*>(data.constData());
+    if (!heap->isValid())
+    {
+        QMessageBox::warning(this, "Error", "ExpHeap signature (HPXE) not found at the specified address.");
+        return;
+    }
+
+    QString heapStr = QString("ExpHeap [Start: 0x%1 | Size: 0x%2 | Allocs: %3 | Policy: %4]")
+                      .arg(heap->core.start, 8, 16, QChar('0'))
+                      .arg(heap->getTotalSize(), 0, 16, QChar('0'))
+                      .arg(heap->allocCount)
+                      .arg(heap->core.isBestFit ? "Best Fit" : "First Fit");
+
     QTreeWidgetItem* heapItem = new QTreeWidgetItem(treeView);
-
-    heapItem->setText(0, QString("0x%1").arg(address, 8, 16, QChar('0')));
-    heapItem->setText(1, QString("0x%1").arg(size, 8, 16, QChar('0')));
-    heapItem->setText(2, QString("---"));
-
+    heapItem->setText(0, heapStr);
+    heapItem->setForeground(0, Qt::darkRed);
     heapItem->setExpanded(true);
-    treeView->addTopLevelItem(heapItem);
-    return heapItem;
-}
 
-void MainWindow::addMemoryBlock(QTreeWidgetItem* heap, u32 address, u32 size, bool isUsed)
-{
-    QTreeWidgetItem* item = new QTreeWidgetItem(heap);
+    struct BlockInfo
+    {
+        u32 address;
+        const MemoryBlockHeader* header;
+    };
+    QList<BlockInfo> blocks;
 
-    item->setText(0, QString("0x%1").arg(address, 8, 16, QChar('0')));
-    item->setText(1, QString("0x%1").arg(size, 8, 16, QChar('0')));
-    item->setText(2, isUsed ? "Used" : "Free");
+    auto traverseBlocks = [&](u32 startNodeAddr)
+    {
+        u32 currAddr = startNodeAddr;
+        while (currAddr != 0)
+        {
+            if (currAddr < baseAddr || (currAddr - baseAddr + sizeof(MemoryBlockHeader)) > (u32)data.size())
+                break;
 
-    heap->addChild(item);
+            const MemoryBlockHeader* header = reinterpret_cast<const MemoryBlockHeader*>(data.constData() + (currAddr -
+                baseAddr));
+            blocks.append({currAddr, header});
+
+            if (header->next == currAddr) break;
+            currAddr = header->next;
+        }
+    };
+
+    traverseBlocks(heap->core.usedBlocks.head);
+    traverseBlocks(heap->core.freeBlocks.head);
+
+    std::sort(blocks.begin(), blocks.end(), [](const BlockInfo& a, const BlockInfo& b)
+    {
+        return a.address < b.address;
+    });
+
+    for (const auto& block : blocks)
+    {
+        u32 payloadAddr = block.address + sizeof(MemoryBlockHeader);
+        QString stateStr = block.header->isUsed() ? "Used" : (block.header->isFree() ? "Free" : "Unknown");
+        QString allocDir = block.header->isRearAlloc ? "Rear" : "Front";
+
+        QString blockStr = QString("MemBlock [Addr: 0x%1 | Size: 0x%2 | State: %3 | Align: %4 | Dir: %5]")
+                           .arg(payloadAddr, 8, 16, QChar('0'))
+                           .arg(block.header->payloadSize, 0, 16, QChar('0'))
+                           .arg(stateStr)
+                           .arg(block.header->alignment)
+                           .arg(allocDir);
+
+        QTreeWidgetItem* item = new QTreeWidgetItem(heapItem);
+        item->setText(0, blockStr);
+        item->setData(0, Qt::UserRole, payloadAddr);
+        if (block.header->isUsed()) item->setForeground(0, Qt::darkBlue);
+        else item->setForeground(0, Qt::darkGreen);
+    }
 }

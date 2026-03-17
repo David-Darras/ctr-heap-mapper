@@ -22,15 +22,9 @@ private slots:
 
 private:
     u32 startAddress;
-    ExpHeap heap;
-
-    static const u32 BYTES_PER_LINE = 16;
 
     void setupUi();
-    void printMemoryBlock(QByteArray data);
-
-    QTreeWidgetItem* addHeap(u32 address, u32 size);
-    void addMemoryBlock(QTreeWidgetItem* heap, u32 address, u32 size, bool isUsed);
+    void parseHeapData(const QByteArray& data, u32 baseAddr);
 
     QTreeWidget* treeView;
     QHexView* memoryView;
