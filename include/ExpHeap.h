@@ -1,5 +1,6 @@
 #ifndef CTR_HEAP_MAPPER_EXP_HEAP_H
 #define CTR_HEAP_MAPPER_EXP_HEAP_H
+
 #include "types.h"
 
 struct MemoryBlockHeader
@@ -9,38 +10,23 @@ struct MemoryBlockHeader
     u8 alignment : 7; // default: 4
     u8 isRearAlloc : 1; // default: front
     u32 payloadSize; // without the header
-    MemoryBlockHeader* prev;
-    MemoryBlockHeader* next;
 
-    bool isUsed() const
-    {
-        return signature == 0x5544; // DU (USED)
-    }
+    u32 prev;
+    u32 next;
 
-    bool isFree() const
-    {
-        return signature == 0x4652; // RF (FREE)
-    }
-
-    bool isValid() const
-    {
-        return isUsed() || isFree();
-    }
-
-    void* getPayload() const
-    {
-        return (void*)((uptr)this + sizeof(MemoryBlockHeader));
-    }
+    bool isUsed() const { return signature == 0x5544; } // DU (USED)
+    bool isFree() const { return signature == 0x4652; } // RF (FREE)
+    bool isValid() const { return isUsed() || isFree(); }
 };
 
 struct ExpHeap
 {
-    void* vtable;
+    u32 vtable;
 
     struct Node
     {
-        Node* parent;
-        void* children;
+        u32 parent;
+        u32 children;
         u32 zeroFill : 1;
         u32  : 31;
     } node;
@@ -53,26 +39,26 @@ struct ExpHeap
 
         struct
         {
-            Core* prev;
-            Core* next;
+            u32 prev;
+            u32 next;
         } siblings;
 
         struct
         {
-            Core* head;
-            Core* tail;
+            u32 head;
+            u32 tail;
             u16 count;
             u16 offset; // = sizeof(signature) = 4
-        } subHeaps; // intrusive linked list
+        } subHeaps;
 
-        void* start;
-        void* end;
+        u32 start;
+        u32 end;
         u32 reserved1;
 
         struct
         {
-            MemoryBlockHeader* head;
-            MemoryBlockHeader* tail;
+            u32 head;
+            u32 tail;
         } freeBlocks, usedBlocks;
 
         u16 id;
@@ -83,15 +69,8 @@ struct ExpHeap
 
     u32 allocCount;
 
-    u32 isValid() const
-    {
-        return core.signature == 0x45585048; // HPXE (Expandable Heap)
-    }
-
-    u32 getTotalSize() const
-    {
-        return (u32)((uptr)core.end - (uptr)core.start);
-    }
+    bool isValid() const { return core.signature == 0x45585048; } // HPXE
+    u32 getTotalSize() const { return core.end - core.start; }
 };
 
 #endif // CTR_HEAP_MAPPER_EXP_HEAP_H
