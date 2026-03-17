@@ -8,21 +8,15 @@
 #include <QVBoxLayout>
 #include <QSplitter>
 
+#include "GatewayRAMDump.h"
+
 MainWindow::MainWindow(QWidget* parent)
-    : QMainWindow(parent)
+    : QMainWindow(parent), startAddress(0x08000000)
 {
     setWindowTitle("CTR-Heap-Mapper");
     resize(1280, 720);
 
     setupUi();
-
-    QByteArray block = QByteArray::fromRawData(
-        "\x48\x65\x6C\x6C\x6F\x2E\x2E\x2E\x2E\x2E\x2E\x2E\x2E\x2E\x2E\x2E"
-        "\x42\x79\x65\x2E\x2E\x2E\x2E\x2E\x2E",
-        25
-    );
-
-    printMemoryBlock(block);
 
     QTreeWidgetItem* heap1 = addHeap(0x08000000, 0x10000);
     addMemoryBlock(heap1, 0x08000000, 0x1000, true);
@@ -66,22 +60,39 @@ void MainWindow::setupUi()
 
 void MainWindow::openFile()
 {
-    QString fileName = QFileDialog::getOpenFileName(this, "Open Binary File", "", "All Files (*);;Binary Files (*.bin *.dat)");
+    QString fileName = QFileDialog::getOpenFileName(this, "Open Binary File", "",
+                                                    "All Files (*);;Binary Files (*.bin *.dat)");
 
-    if (fileName.isEmpty()) {
+    if (fileName.isEmpty())
+    {
         return;
     }
 
     QFile file(fileName);
-    if (!file.open(QIODevice::ReadOnly)) {
+    if (!file.open(QIODevice::ReadOnly))
+    {
         QMessageBox::critical(this, "Error", "Could not open file: " + file.errorString());
         return;
     }
 
-    QByteArray data = file.read(0x100);
-    file.close();
+    QByteArray headerData = file.read(sizeof(GatewayRAMDump));
+    const GatewayRAMDump* header = reinterpret_cast<const GatewayRAMDump*>(headerData.constData());
 
-    printMemoryBlock(data);
+    QByteArray regionData = file.read(sizeof(RegionEntry) * header->regionCount);
+    const RegionEntry* regions = reinterpret_cast<const RegionEntry*>(regionData.constData());
+
+    for (u32 i = 0; i < header->regionCount; i++)
+    {
+        if (regions[i].startAddress == startAddress)
+        {
+            file.seek(regions[i].fileOffset);
+            QByteArray block = file.read(regions[i].size);
+            printMemoryBlock(block);
+            return;
+        }
+    }
+
+    QMessageBox::critical(this, "Error", "Heap not found.");
 }
 
 QTreeWidgetItem* MainWindow::addHeap(u32 address, u32 size)
@@ -117,7 +128,7 @@ void MainWindow::printMemoryBlock(QByteArray data)
         QByteArray block = data.mid(i, BYTES_PER_LINE);
 
         // Offset
-        QString offset = QString("%1  ").arg(i, 8, 16, QChar('0')).toUpper();
+        QString offset = QString("%1 ").arg(i + startAddress, 8, 16, QChar('0')).toUpper();
 
         // Bytes (Hex)
         QString hex;

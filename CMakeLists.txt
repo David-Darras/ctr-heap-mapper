@@ -19,7 +19,9 @@ file(GLOB_RECURSE SOURCES "src/*.cpp")
 add_executable(ctr_heap_mapper ${SOURCES}
         src/MainWindow.cpp
         include/MainWindow.h
-        include/types.h)
+        include/types.h
+        include/GatewayRAMDump.h
+)
 
 target_link_libraries(ctr_heap_mapper
         Qt::Core

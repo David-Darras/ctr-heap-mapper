@@ -18,6 +18,8 @@ private slots:
     void openFile();
 
 private:
+    u32 startAddress;
+
     static const u32 BYTES_PER_LINE = 16;
 
     void setupUi();
