@@ -34,6 +34,7 @@ void MainWindow::setupUi()
     treeView = new QTreeWidget();
     treeView->setColumnCount(1);
     treeView->setHeaderHidden(true);
+    connect(treeView, &QTreeWidget::itemClicked, this, &MainWindow::onItemClicked);
 
     memoryView = new QHexView();
     memoryView->setReadOnly(true);
@@ -75,10 +76,10 @@ void MainWindow::openFile()
         if (regions[i].startAddress == startAddress)
         {
             file.seek(regions[i].fileOffset);
-            QByteArray block = file.read(regions[i].size);
-            memoryView->setData(block);
+            currentDump = file.read(regions[i].size);
+            memoryView->setData(currentDump);
             memoryView->setBaseAddress(startAddress);
-            parseHeapData(block, startAddress);
+            parseHeapData(currentDump, startAddress);
             return;
         }
     }
@@ -108,6 +109,8 @@ void MainWindow::parseHeapData(const QByteArray& data, u32 baseAddr)
     heapItem->setText(0, heapStr);
     heapItem->setForeground(0, Qt::darkRed);
     heapItem->setExpanded(true);
+    heapItem->setData(0, Qt::UserRole, heap->core.start);
+    heapItem->setData(0, Qt::UserRole + 1, heap->getTotalSize());
 
     struct BlockInfo
     {
@@ -157,7 +160,29 @@ void MainWindow::parseHeapData(const QByteArray& data, u32 baseAddr)
         QTreeWidgetItem* item = new QTreeWidgetItem(heapItem);
         item->setText(0, blockStr);
         item->setData(0, Qt::UserRole, payloadAddr);
+        item->setData(0, Qt::UserRole + 1, block.header->payloadSize);
+
         if (block.header->isUsed()) item->setForeground(0, Qt::darkBlue);
         else item->setForeground(0, Qt::darkGreen);
+    }
+}
+
+void MainWindow::onItemClicked(QTreeWidgetItem* item, int column)
+{
+    Q_UNUSED(column);
+    if (currentDump.isEmpty()) return;
+
+    u32 targetAddr = item->data(0, Qt::UserRole).toUInt();
+    u32 targetSize = item->data(0, Qt::UserRole + 1).toUInt();
+
+    if (targetSize == 0 || targetAddr < startAddress) return;
+
+    u32 offset = targetAddr - startAddress;
+
+    if (offset < (u32)currentDump.size() && (offset + targetSize) <= (u32)currentDump.size())
+    {
+        QByteArray slice = currentDump.mid(offset, targetSize);
+        memoryView->setData(slice);
+        memoryView->setBaseAddress(targetAddr);
     }
 }

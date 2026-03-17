@@ -19,9 +19,11 @@ public:
 
 private slots:
     void openFile();
+    void onItemClicked(QTreeWidgetItem* item, int column);
 
 private:
     u32 startAddress;
+    QByteArray currentDump;
 
     void setupUi();
     void parseHeapData(const QByteArray& data, u32 baseAddr);
