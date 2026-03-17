@@ -18,4 +18,6 @@ typedef int64_t s64;
 typedef float f32;
 typedef double f64;
 
+typedef uintptr_t uptr;
+
 #endif //CTR_HEAP_MAPPER_TYPES_H

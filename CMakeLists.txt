@@ -24,6 +24,7 @@ add_executable(ctr_heap_mapper ${SOURCES}
         include/types.h
         include/GatewayRAMDump.h
         include/config.h
+        include/ExpHeap.h
 )
 
 target_link_libraries(ctr_heap_mapper

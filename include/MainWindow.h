@@ -4,6 +4,8 @@
 #include <QMainWindow>
 #include <QTreeWidget>
 #include <QTextEdit>
+
+#include "ExpHeap.h"
 #include "QHexView/qhexview.h"
 
 #include "types.h"
@@ -20,6 +22,7 @@ private slots:
 
 private:
     u32 startAddress;
+    ExpHeap heap;
 
     static const u32 BYTES_PER_LINE = 16;
 
