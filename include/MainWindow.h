@@ -18,7 +18,10 @@ private:
     void setupUi();
     void printMemoryBlock(QByteArray data);
 
-    QTextEdit* treeView;
+    QTreeWidgetItem* addHeap(u32 address, u32 size);
+    void addMemoryBlock(QTreeWidgetItem* heap, u32 address, u32 size, bool isUsed);
+
+    QTreeWidget* treeView;
     QTextEdit* memoryView;
 };
 

@@ -14,10 +14,17 @@ MainWindow::MainWindow(QWidget* parent)
     QByteArray block = QByteArray::fromRawData(
         "\x48\x65\x6C\x6C\x6F\x2E\x2E\x2E\x2E\x2E\x2E\x2E\x2E\x2E\x2E\x2E"
         "\x42\x79\x65\x2E\x2E\x2E\x2E\x2E\x2E",
-        25 // nombre d’octets
+        25
     );
 
     printMemoryBlock(block);
+
+    QTreeWidgetItem* heap1 = addHeap(0x08000000, 0x10000);
+    addMemoryBlock(heap1, 0x08000000, 0x1000, true);
+    addMemoryBlock(heap1, 0x08001000, 0x500, false);
+
+    QTreeWidgetItem* heap2 = addHeap(0x08200000, 0x20000);
+    addMemoryBlock(heap2, 0x08200000, 0x2000, true);
 }
 
 void MainWindow::setupUi()
@@ -26,8 +33,15 @@ void MainWindow::setupUi()
     QVBoxLayout* layout = new QVBoxLayout;
     QSplitter* splitter = new QSplitter(Qt::Vertical, central);
 
-    treeView = new QTextEdit();
+    treeView = new QTreeWidget();
+    treeView->setColumnCount(3);
+    treeView->setHeaderLabels(QStringList() << "Address" << "Size" << "State");
+    treeView->setColumnWidth(0, 150);
+    treeView->setColumnWidth(1, 120);
+    treeView->setColumnWidth(2, 100);
+
     memoryView = new QTextEdit();
+    memoryView->setReadOnly(true);
 
     splitter->addWidget(treeView);
     splitter->addWidget(memoryView);
@@ -37,6 +51,30 @@ void MainWindow::setupUi()
 
     central->setLayout(layout);
     setCentralWidget(central);
+}
+
+QTreeWidgetItem* MainWindow::addHeap(u32 address, u32 size)
+{
+    QTreeWidgetItem* heapItem = new QTreeWidgetItem(treeView);
+
+    heapItem->setText(0, QString("0x%1").arg(address, 8, 16, QChar('0')));
+    heapItem->setText(1, QString("0x%1").arg(size, 8, 16, QChar('0')));
+    heapItem->setText(2, QString("---"));
+
+    heapItem->setExpanded(true);
+    treeView->addTopLevelItem(heapItem);
+    return heapItem;
+}
+
+void MainWindow::addMemoryBlock(QTreeWidgetItem* heap, u32 address, u32 size, bool isUsed)
+{
+    QTreeWidgetItem* item = new QTreeWidgetItem(heap);
+
+    item->setText(0, QString("0x%1").arg(address, 8, 16, QChar('0')));
+    item->setText(1, QString("0x%1").arg(size, 8, 16, QChar('0')));
+    item->setText(2, isUsed ? "Used" : "Free");
+
+    heap->addChild(item);
 }
 
 void MainWindow::printMemoryBlock(QByteArray data)
