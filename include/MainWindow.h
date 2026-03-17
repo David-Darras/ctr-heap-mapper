@@ -10,6 +10,12 @@
 
 #include "types.h"
 
+struct RegionData
+{
+    u32 startAddress;
+    QByteArray data;
+};
+
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -23,10 +29,12 @@ private slots:
 
 private:
     u32 startAddress;
-    QByteArray currentDump;
+    QList<RegionData> loadedRegions;
 
     void setupUi();
-    void parseHeapData(const QByteArray& data, u32 baseAddr);
+    const void* getMemoryPointer(u32 address, u32 size);
+    void parseExpHeapList(u32 startCoreAddr, QTreeWidgetItem* parentItem, QSet<u32>& parsedCores);
+    void parseHeapBlocks(const ExpHeap* heap, QTreeWidgetItem* heapItem);
 
     QTreeWidget* treeView;
     QHexView* memoryView;

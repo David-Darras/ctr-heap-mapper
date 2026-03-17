@@ -1,5 +1,4 @@
 #include "MainWindow.h"
-#include <QMenu>
 #include <QMenuBar>
 #include <QAction>
 #include <QFileDialog>
@@ -9,6 +8,7 @@
 #include <QSplitter>
 
 #include "config.h"
+#include "ExpHeap.h"
 #include "GatewayRAMDump.h"
 
 MainWindow::MainWindow(QWidget* parent)
@@ -51,6 +51,21 @@ void MainWindow::setupUi()
     setCentralWidget(central);
 }
 
+const void* MainWindow::getMemoryPointer(u32 address, u32 size)
+{
+    if (size == 0) return nullptr;
+
+    for (const auto& region : loadedRegions)
+    {
+        if (address >= region.startAddress && (address + size) <= (region.startAddress + region.data.size()))
+        {
+            u32 offset = address - region.startAddress;
+            return region.data.constData() + offset;
+        }
+    }
+    return nullptr;
+}
+
 void MainWindow::openFile()
 {
     QString fileName = QFileDialog::getOpenFileName(this, "Open Binary File", "",
@@ -71,47 +86,92 @@ void MainWindow::openFile()
     QByteArray regionData = file.read(sizeof(RegionEntry) * header->regionCount);
     const RegionEntry* regions = reinterpret_cast<const RegionEntry*>(regionData.constData());
 
+    treeView->clear();
+    loadedRegions.clear();
+    QSet<u32> parsedCores;
+
     for (u32 i = 0; i < header->regionCount; i++)
     {
-        if (regions[i].startAddress == startAddress)
-        {
-            file.seek(regions[i].fileOffset);
-            currentDump = file.read(regions[i].size);
-            memoryView->setData(currentDump);
-            memoryView->setBaseAddress(startAddress);
-            parseHeapData(currentDump, startAddress);
-            return;
-        }
+        file.seek(regions[i].fileOffset);
+        QByteArray dump = file.read(regions[i].size);
+        loadedRegions.append({regions[i].startAddress, dump});
     }
 
-    QMessageBox::critical(this, "Error", "Heap not found.");
+    const ExpHeap* initialHeap = reinterpret_cast<const ExpHeap*>(getMemoryPointer(startAddress, sizeof(ExpHeap)));
+
+    if (initialHeap && initialHeap->isValid())
+    {
+        u32 currentCoreAddr = startAddress + offsetof(ExpHeap, core);
+
+        while (true)
+        {
+            u32 heapAddr = currentCoreAddr - offsetof(ExpHeap, core);
+            const ExpHeap* h = reinterpret_cast<const ExpHeap*>(getMemoryPointer(heapAddr, sizeof(ExpHeap)));
+
+            if (!h || !h->isValid() || h->core.siblings.prev == 0) break;
+            if (parsedCores.contains(h->core.siblings.prev)) break;
+
+            currentCoreAddr = h->core.siblings.prev;
+        }
+
+        parseExpHeapList(currentCoreAddr, treeView->invisibleRootItem(), parsedCores);
+    }
+    else
+    {
+        QMessageBox::warning(this, "Avertissement",
+                             QString("Aucun ExpHeap valide trouvé à l'adresse de départ (0x%1).")
+                             .arg(startAddress, 8, 16, QChar('0')));
+    }
 }
 
-void MainWindow::parseHeapData(const QByteArray& data, u32 baseAddr)
+void MainWindow::parseExpHeapList(u32 startCoreAddr, QTreeWidgetItem* parentItem, QSet<u32>& parsedCores)
 {
-    treeView->clear();
-    if ((u32)data.size() < sizeof(ExpHeap)) return;
+    u32 currentCoreAddr = startCoreAddr;
 
-    const ExpHeap* heap = reinterpret_cast<const ExpHeap*>(data.constData());
-    if (!heap->isValid())
+    while (currentCoreAddr != 0)
     {
-        QMessageBox::warning(this, "Error", "ExpHeap signature (HPXE) not found at the specified address.");
-        return;
+        if (parsedCores.contains(currentCoreAddr)) break;
+        parsedCores.insert(currentCoreAddr);
+
+        u32 heapAddr = currentCoreAddr - offsetof(ExpHeap, core);
+        const ExpHeap* heap = reinterpret_cast<const ExpHeap*>(getMemoryPointer(heapAddr, sizeof(ExpHeap)));
+
+        if (!heap || !heap->isValid()) break;
+
+        QString heapStr = QString("ExpHeap [Addr: 0x%1 | Start: 0x%2 | Size: 0x%3 | Allocs: %4]")
+                          .arg(heapAddr, 8, 16, QChar('0'))
+                          .arg(heap->core.start, 8, 16, QChar('0'))
+                          .arg(heap->getTotalSize(), 0, 16, QChar('0'))
+                          .arg(heap->allocCount);
+
+        QTreeWidgetItem* heapItem = new QTreeWidgetItem(parentItem);
+        heapItem->setText(0, heapStr);
+        heapItem->setForeground(0, Qt::darkRed);
+        heapItem->setExpanded(true);
+        heapItem->setData(0, Qt::UserRole, heapAddr);
+        heapItem->setData(0, Qt::UserRole + 1, heap->core.end - heapAddr); // Taille approximative dans la RAM
+
+        if (heap->core.subHeaps.head != 0 || heap->core.subHeaps.count > 0)
+        {
+            QTreeWidgetItem* subHeapsItem = new QTreeWidgetItem(heapItem);
+            subHeapsItem->setText(0, QString("SubHeaps [Count: %1 | Head: 0x%2 | Tail: 0x%3]")
+                                     .arg(heap->core.subHeaps.count)
+                                     .arg(heap->core.subHeaps.head, 8, 16, QChar('0'))
+                                     .arg(heap->core.subHeaps.tail, 8, 16, QChar('0')));
+            subHeapsItem->setForeground(0, Qt::darkCyan);
+            if (heap->core.subHeaps.head != 0)
+            {
+                parseExpHeapList(heap->core.subHeaps.head, subHeapsItem, parsedCores);
+            }
+        }
+
+        parseHeapBlocks(heap, heapItem);
+        currentCoreAddr = heap->core.siblings.next;
     }
+}
 
-    QString heapStr = QString("ExpHeap [Start: 0x%1 | Size: 0x%2 | Allocs: %3 | Policy: %4]")
-                      .arg(heap->core.start, 8, 16, QChar('0'))
-                      .arg(heap->getTotalSize(), 0, 16, QChar('0'))
-                      .arg(heap->allocCount)
-                      .arg(heap->core.isBestFit ? "Best Fit" : "First Fit");
-
-    QTreeWidgetItem* heapItem = new QTreeWidgetItem(treeView);
-    heapItem->setText(0, heapStr);
-    heapItem->setForeground(0, Qt::darkRed);
-    heapItem->setExpanded(true);
-    heapItem->setData(0, Qt::UserRole, heap->core.start);
-    heapItem->setData(0, Qt::UserRole + 1, heap->getTotalSize());
-
+void MainWindow::parseHeapBlocks(const ExpHeap* heap, QTreeWidgetItem* heapItem)
+{
     struct BlockInfo
     {
         u32 address;
@@ -122,13 +182,19 @@ void MainWindow::parseHeapData(const QByteArray& data, u32 baseAddr)
     auto traverseBlocks = [&](u32 startNodeAddr)
     {
         u32 currAddr = startNodeAddr;
+        QSet<u32> visitedBlocks;
+
         while (currAddr != 0)
         {
-            if (currAddr < baseAddr || (currAddr - baseAddr + sizeof(MemoryBlockHeader)) > (u32)data.size())
-                break;
+            if (visitedBlocks.contains(currAddr)) break;
+            visitedBlocks.insert(currAddr);
 
-            const MemoryBlockHeader* header = reinterpret_cast<const MemoryBlockHeader*>(data.constData() + (currAddr -
-                baseAddr));
+            const MemoryBlockHeader* header = reinterpret_cast<const MemoryBlockHeader*>(
+                getMemoryPointer(currAddr, sizeof(MemoryBlockHeader))
+            );
+
+            if (!header) break;
+
             blocks.append({currAddr, header});
 
             if (header->next == currAddr) break;
@@ -170,19 +236,25 @@ void MainWindow::parseHeapData(const QByteArray& data, u32 baseAddr)
 void MainWindow::onItemClicked(QTreeWidgetItem* item, int column)
 {
     Q_UNUSED(column);
-    if (currentDump.isEmpty()) return;
+    if (loadedRegions.isEmpty()) return;
 
     u32 targetAddr = item->data(0, Qt::UserRole).toUInt();
     u32 targetSize = item->data(0, Qt::UserRole + 1).toUInt();
 
-    if (targetSize == 0 || targetAddr < startAddress) return;
+    if (targetSize == 0) return;
 
-    u32 offset = targetAddr - startAddress;
-
-    if (offset < (u32)currentDump.size() && (offset + targetSize) <= (u32)currentDump.size())
+    for (const auto& region : loadedRegions)
     {
-        QByteArray slice = currentDump.mid(offset, targetSize);
-        memoryView->setData(slice);
-        memoryView->setBaseAddress(targetAddr);
+        if (targetAddr >= region.startAddress && targetAddr < region.startAddress + (u32)region.data.size())
+        {
+            u32 offset = targetAddr - region.startAddress;
+            u32 availableSize = (u32)region.data.size() - offset;
+            u32 readSize = qMin(targetSize, availableSize);
+
+            QByteArray slice = region.data.mid(offset, readSize);
+            memoryView->setData(slice);
+            memoryView->setBaseAddress(targetAddr);
+            return;
+        }
     }
 }
