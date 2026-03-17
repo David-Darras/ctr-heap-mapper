@@ -1,4 +1,6 @@
 #include <QApplication>
+
+#include "config.h"
 #include "MainWindow.h"
 
 int main(int argc, char* argv[])
@@ -9,7 +11,7 @@ int main(int argc, char* argv[])
     {
         app.setStyle("Fusion");
 
-        QFont font("JetBrains Mono", 11);
+        QFont font(FONT_FAMILY, FONT_SIZE);
         app.setFont(font);
     }
 

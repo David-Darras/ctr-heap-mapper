@@ -10,6 +10,8 @@ set(CMAKE_PREFIX_PATH "C:/Qt/6.10.2/mingw_64")
 
 find_package(Qt6 COMPONENTS Core Gui Widgets REQUIRED)
 
+add_subdirectory(QHexView)
+
 # Indiquer où sont les headers
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
@@ -21,12 +23,14 @@ add_executable(ctr_heap_mapper ${SOURCES}
         include/MainWindow.h
         include/types.h
         include/GatewayRAMDump.h
+        include/config.h
 )
 
 target_link_libraries(ctr_heap_mapper
         Qt::Core
         Qt::Gui
         Qt::Widgets
+        QHexView
 )
 
 # Partie Windows / copie des DLL (inchangée)

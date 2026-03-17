@@ -8,6 +8,7 @@
 #include <QVBoxLayout>
 #include <QSplitter>
 
+#include "config.h"
 #include "GatewayRAMDump.h"
 
 MainWindow::MainWindow(QWidget* parent)
@@ -45,8 +46,10 @@ void MainWindow::setupUi()
     treeView->setColumnWidth(1, 120);
     treeView->setColumnWidth(2, 100);
 
-    memoryView = new QTextEdit();
+    memoryView = new QHexView();
     memoryView->setReadOnly(true);
+    QFont font(FONT_FAMILY, FONT_SIZE);
+    memoryView->setFont(font);
 
     splitter->addWidget(treeView);
     splitter->addWidget(memoryView);
@@ -87,7 +90,8 @@ void MainWindow::openFile()
         {
             file.seek(regions[i].fileOffset);
             QByteArray block = file.read(regions[i].size);
-            printMemoryBlock(block);
+            memoryView->setData(block);
+            memoryView->setBaseAddress(startAddress);
             return;
         }
     }
@@ -117,52 +121,4 @@ void MainWindow::addMemoryBlock(QTreeWidgetItem* heap, u32 address, u32 size, bo
     item->setText(2, isUsed ? "Used" : "Free");
 
     heap->addChild(item);
-}
-
-void MainWindow::printMemoryBlock(QByteArray data)
-{
-    QString output;
-
-    for (u32 i = 0; i < data.size(); i += BYTES_PER_LINE)
-    {
-        QByteArray block = data.mid(i, BYTES_PER_LINE);
-
-        // Offset
-        QString offset = QString("%1 ").arg(i + startAddress, 8, 16, QChar('0')).toUpper();
-
-        // Bytes (Hex)
-        QString hex;
-        for (int j = 0; j < BYTES_PER_LINE; j++)
-        {
-            if (j >= block.size())
-            {
-                hex += "   ";
-                continue;
-            }
-
-            hex += QString("%1 ").arg((u8)block[j], 2, 16, QChar('0')).toUpper();
-        }
-        hex += " ";
-
-        // Ascii
-        QString ascii;
-        for (char c : block)
-        {
-            if (c >= 0x20 && c < 0x7F)
-            {
-                ascii += c;
-            }
-            else
-            {
-                ascii += ".";
-            }
-        }
-        ascii += "\n";
-
-        output.append(offset);
-        output.append(hex);
-        output.append(ascii);
-    }
-
-    memoryView->setPlainText(output);
 }

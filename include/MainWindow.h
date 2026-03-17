@@ -4,6 +4,7 @@
 #include <QMainWindow>
 #include <QTreeWidget>
 #include <QTextEdit>
+#include "QHexView/qhexview.h"
 
 #include "types.h"
 
@@ -29,7 +30,7 @@ private:
     void addMemoryBlock(QTreeWidgetItem* heap, u32 address, u32 size, bool isUsed);
 
     QTreeWidget* treeView;
-    QTextEdit* memoryView;
+    QHexView* memoryView;
 };
 
 #endif // CTR_HEAP_MAPPER_MAINAPP_H
