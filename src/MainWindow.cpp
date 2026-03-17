@@ -1,5 +1,10 @@
 #include "MainWindow.h"
 #include <QMenu>
+#include <QMenuBar>
+#include <QAction>
+#include <QFileDialog>
+#include <QFile>
+#include <QMessageBox>
 #include <QVBoxLayout>
 #include <QSplitter>
 
@@ -33,6 +38,12 @@ void MainWindow::setupUi()
     QVBoxLayout* layout = new QVBoxLayout;
     QSplitter* splitter = new QSplitter(Qt::Vertical, central);
 
+    QMenu* fileMenu = menuBar()->addMenu("File");
+    QAction* openAction = new QAction("Open", this);
+    openAction->setShortcut(QKeySequence::Open);
+    fileMenu->addAction(openAction);
+    connect(openAction, &QAction::triggered, this, &MainWindow::openFile);
+
     treeView = new QTreeWidget();
     treeView->setColumnCount(3);
     treeView->setHeaderLabels(QStringList() << "Address" << "Size" << "State");
@@ -51,6 +62,26 @@ void MainWindow::setupUi()
 
     central->setLayout(layout);
     setCentralWidget(central);
+}
+
+void MainWindow::openFile()
+{
+    QString fileName = QFileDialog::getOpenFileName(this, "Open Binary File", "", "All Files (*);;Binary Files (*.bin *.dat)");
+
+    if (fileName.isEmpty()) {
+        return;
+    }
+
+    QFile file(fileName);
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::critical(this, "Error", "Could not open file: " + file.errorString());
+        return;
+    }
+
+    QByteArray data = file.read(0x100);
+    file.close();
+
+    printMemoryBlock(data);
 }
 
 QTreeWidgetItem* MainWindow::addHeap(u32 address, u32 size)

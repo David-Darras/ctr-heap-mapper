@@ -9,8 +9,13 @@
 
 class MainWindow : public QMainWindow
 {
+    Q_OBJECT
+
 public:
     explicit MainWindow(QWidget* parent = nullptr);
+
+private slots:
+    void openFile();
 
 private:
     static const u32 BYTES_PER_LINE = 16;
