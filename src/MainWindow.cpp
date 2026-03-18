@@ -26,15 +26,20 @@ void MainWindow::setupUi()
     QSplitter* splitter = new QSplitter(Qt::Vertical, central);
 
     QMenu* fileMenu = menuBar()->addMenu("File");
-    QAction* openAction = new QAction("Open", this);
+
+    QAction* openAction = new QAction("Open Standard Dump", this);
     openAction->setShortcut(QKeySequence::Open);
     fileMenu->addAction(openAction);
     connect(openAction, &QAction::triggered, this, &MainWindow::openFile);
 
+    QAction* openPkmnAction = new QAction("Open Pokémon RAM Dump", this);
+    fileMenu->addAction(openPkmnAction);
+    connect(openPkmnAction, &QAction::triggered, this, &MainWindow::openPokemonFile);
+
     treeView = new QTreeWidget();
     treeView->setColumnCount(1);
     treeView->setHeaderHidden(true);
-    connect(treeView, &QTreeWidget::itemClicked, this, &MainWindow::onItemClicked);
+    connect(treeView, &QTreeWidget::currentItemChanged, this, &MainWindow::onCurrentItemChanged);
 
     memoryView = new QHexView();
     memoryView->setReadOnly(true);
@@ -66,18 +71,13 @@ const void* MainWindow::getMemoryPointer(u32 address, u32 size)
     return nullptr;
 }
 
-void MainWindow::openFile()
+bool MainWindow::loadDumpIntoMemory(const QString& fileName)
 {
-    QString fileName = QFileDialog::getOpenFileName(this, "Open Binary File", "",
-                                                    "All Files (*);;Binary Files (*.bin *.dat)");
-
-    if (fileName.isEmpty()) return;
-
     QFile file(fileName);
     if (!file.open(QIODevice::ReadOnly))
     {
         QMessageBox::critical(this, "Error", "Could not open file: " + file.errorString());
-        return;
+        return false;
     }
 
     QByteArray headerData = file.read(sizeof(GatewayRAMDump));
@@ -88,7 +88,6 @@ void MainWindow::openFile()
 
     treeView->clear();
     loadedRegions.clear();
-    QSet<u32> parsedCores;
 
     for (u32 i = 0; i < header->regionCount; i++)
     {
@@ -97,6 +96,16 @@ void MainWindow::openFile()
         loadedRegions.append({regions[i].startAddress, dump});
     }
 
+    return true;
+}
+
+void MainWindow::openFile()
+{
+    QString fileName = QFileDialog::getOpenFileName(this, "Open Standard Binary File", "",
+                                                    "All Files (*);;Binary Files (*.bin *.dat)");
+    if (fileName.isEmpty() || !loadDumpIntoMemory(fileName)) return;
+
+    QSet<u32> parsedCores;
     const ExpHeap* initialHeap = reinterpret_cast<const ExpHeap*>(getMemoryPointer(startAddress, sizeof(ExpHeap)));
 
     if (initialHeap && initialHeap->isValid())
@@ -121,6 +130,56 @@ void MainWindow::openFile()
         QMessageBox::warning(this, "Avertissement",
                              QString("Aucun ExpHeap valide trouvé à l'adresse de départ (0x%1).")
                              .arg(startAddress, 8, 16, QChar('0')));
+    }
+}
+
+void MainWindow::openPokemonFile()
+{
+    QString fileName = QFileDialog::getOpenFileName(this, "Open Pokémon RAM Dump", "",
+                                                    "All Files (*);;Binary Files (*.bin *.dat)");
+    if (fileName.isEmpty() || !loadDumpIntoMemory(fileName)) return;
+
+    const HeapTable* table = reinterpret_cast<const HeapTable*>(getMemoryPointer(startAddress, sizeof(HeapTable)));
+
+    if (!table)
+    {
+        QMessageBox::warning(this, "Avertissement", "Impossible de lire la HeapTable à l'adresse de départ.");
+        return;
+    }
+
+    QSet<u32> parsedCores;
+    int heapsFound = 0;
+
+    for (int i = 0; i < 560; i++)
+    {
+        if (!table->entries[i].isUsed) continue;
+
+        u32 wrapperAddr = table->entries[i].wrapper;
+        const ExpHeapWrapper* wrapper = reinterpret_cast<const ExpHeapWrapper*>(getMemoryPointer(
+            wrapperAddr, sizeof(ExpHeapWrapper)));
+
+        if (!wrapper || wrapper->expHeap == 0) continue;
+        heapsFound++;
+
+        u32 currentCoreAddr = wrapper->expHeap + offsetof(ExpHeap, core);
+
+        while (true)
+        {
+            u32 heapAddr = currentCoreAddr - offsetof(ExpHeap, core);
+            const ExpHeap* h = reinterpret_cast<const ExpHeap*>(getMemoryPointer(heapAddr, sizeof(ExpHeap)));
+
+            if (!h || !h->isValid() || h->core.siblings.prev == 0) break;
+            if (parsedCores.contains(h->core.siblings.prev)) break;
+
+            currentCoreAddr = h->core.siblings.prev;
+        }
+
+        parseExpHeapList(currentCoreAddr, treeView->invisibleRootItem(), parsedCores);
+    }
+
+    if (heapsFound == 0)
+    {
+        QMessageBox::warning(this, "Info", "Aucun ExpHeap valide n'a été trouvé via la table des wrappers.");
     }
 }
 
@@ -149,7 +208,7 @@ void MainWindow::parseExpHeapList(u32 startCoreAddr, QTreeWidgetItem* parentItem
         heapItem->setForeground(0, Qt::darkRed);
         heapItem->setExpanded(true);
         heapItem->setData(0, Qt::UserRole, heapAddr);
-        heapItem->setData(0, Qt::UserRole + 1, heap->core.end - heapAddr); // Taille approximative dans la RAM
+        heapItem->setData(0, Qt::UserRole + 1, heap->core.end - heapAddr);
 
         if (heap->core.subHeaps.head != 0 || heap->core.subHeaps.count > 0)
         {
@@ -158,7 +217,7 @@ void MainWindow::parseExpHeapList(u32 startCoreAddr, QTreeWidgetItem* parentItem
                                      .arg(heap->core.subHeaps.count)
                                      .arg(heap->core.subHeaps.head, 8, 16, QChar('0'))
                                      .arg(heap->core.subHeaps.tail, 8, 16, QChar('0')));
-            subHeapsItem->setForeground(0, Qt::darkCyan);
+            subHeapsItem->setForeground(0, Qt::darkRed);
             if (heap->core.subHeaps.head != 0)
             {
                 parseExpHeapList(heap->core.subHeaps.head, subHeapsItem, parsedCores);
@@ -220,7 +279,7 @@ void MainWindow::parseHeapBlocks(const ExpHeap* heap, QTreeWidgetItem* heapItem)
                            .arg(payloadAddr, 8, 16, QChar('0'))
                            .arg(block.header->payloadSize, 0, 16, QChar('0'))
                            .arg(stateStr)
-                           .arg(block.header->alignment)
+                           .arg(block.header->alignment, 0, 16, QChar('0'))
                            .arg(allocDir);
 
         QTreeWidgetItem* item = new QTreeWidgetItem(heapItem);
@@ -229,17 +288,18 @@ void MainWindow::parseHeapBlocks(const ExpHeap* heap, QTreeWidgetItem* heapItem)
         item->setData(0, Qt::UserRole + 1, block.header->payloadSize);
 
         if (block.header->isUsed()) item->setForeground(0, Qt::darkBlue);
-        else item->setForeground(0, Qt::darkGreen);
+        else item->setForeground(0, Qt::darkGray);
     }
 }
 
-void MainWindow::onItemClicked(QTreeWidgetItem* item, int column)
+void MainWindow::onCurrentItemChanged(QTreeWidgetItem* current, QTreeWidgetItem* previous)
 {
-    Q_UNUSED(column);
-    if (loadedRegions.isEmpty()) return;
+    Q_UNUSED(previous);
 
-    u32 targetAddr = item->data(0, Qt::UserRole).toUInt();
-    u32 targetSize = item->data(0, Qt::UserRole + 1).toUInt();
+    if (!current || loadedRegions.isEmpty()) return;
+
+    u32 targetAddr = current->data(0, Qt::UserRole).toUInt();
+    u32 targetSize = current->data(0, Qt::UserRole + 1).toUInt();
 
     if (targetSize == 0) return;
 

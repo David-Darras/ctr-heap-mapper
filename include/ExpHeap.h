@@ -7,7 +7,7 @@ struct MemoryBlockHeader
 {
     u16 signature; // DU, RF
     u8 id;
-    u8 alignment : 7; // default: 4
+    u8 alignment : 7; // default: 0
     u8 isRearAlloc : 1; // default: front
     u32 payloadSize; // without the header
 

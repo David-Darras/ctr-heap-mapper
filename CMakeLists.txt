@@ -25,6 +25,7 @@ add_executable(ctr_heap_mapper ${SOURCES}
         include/GatewayRAMDump.h
         include/config.h
         include/ExpHeap.h
+        include/PokemonExpHeap.h
 )
 
 target_link_libraries(ctr_heap_mapper

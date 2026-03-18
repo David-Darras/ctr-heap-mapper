@@ -25,7 +25,8 @@ public:
 
 private slots:
     void openFile();
-    void onItemClicked(QTreeWidgetItem* item, int column);
+    void openPokemonFile();
+    void onCurrentItemChanged(QTreeWidgetItem* current, QTreeWidgetItem* previous);
 
 private:
     u32 startAddress;
@@ -33,6 +34,7 @@ private:
 
     void setupUi();
     const void* getMemoryPointer(u32 address, u32 size);
+    bool loadDumpIntoMemory(const QString& fileName);
     void parseExpHeapList(u32 startCoreAddr, QTreeWidgetItem* parentItem, QSet<u32>& parsedCores);
     void parseHeapBlocks(const ExpHeap* heap, QTreeWidgetItem* heapItem);
 
