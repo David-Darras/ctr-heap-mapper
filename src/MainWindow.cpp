@@ -10,6 +10,7 @@
 #include "config.h"
 #include "ExpHeap.h"
 #include "GatewayRAMDump.h"
+#include "PokemonExpHeap.h"
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent), startAddress(0x08000000)
